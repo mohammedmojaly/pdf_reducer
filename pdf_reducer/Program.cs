@@ -11,8 +11,8 @@ namespace pdf_reducer {
     class Program {
 
         const int MB = 1048576;
-        const string SRC = @"c:\Users\jacobj\Desktop\pdf reducer\src\";
-        const string DEST = @"c:\Users\jacobj\Desktop\pdf reducer\dest\";
+        const string SRC = @"c:\Users\Jacob\Documents\pdf_reducer\src\";
+        const string DEST = @"c:\Users\Jacob\Documents\pdf_reducer\dest\";
 
         static string create_dest_name(FileInfo file, string filename) {
             var new_file_name = filename;
@@ -83,30 +83,61 @@ namespace pdf_reducer {
             catch (Exception e) {
                 Console.Write(e);
                 Console.WriteLine();
+                Console.WriteLine();
                 return file.Length;
             }
         }
 
-        static long optimize_pdf(FileInfo file) {
+        static bool optimize_pdf(string src, string dest) {
             try {
-                using (var reader = new PdfReader(file.FullName)) {
-                    var d = new Document();
-                    var filename = create_dest_name(file, DEST + file.Name);
-                    var copy = new PdfSmartCopy(d, new FileStream(filename, FileMode.Create));
-                    //copy.SetMergeFields();
-                    d.Open();
-                    copy.AddDocument(reader);
-                    copy.FreeReader(reader);
-                    copy.Close();
-                    d.Close();
-                    return get_file_size(filename);
-                }
+                var reader = new PdfReader(src);
+                var fs = new FileStream(dest, FileMode.Create);
+                var stamp = new PdfStamper(reader, fs);
+                reader.RemoveUnusedObjects();
+                stamp.SetFullCompression();
+                stamp.Close();
+                return true;
             }
             catch (Exception e) {
                 Console.Write(e);
-                Console.WriteLine();
-                return file.Length;
+                Console.WriteLine(System.Environment.NewLine);
+                return false;
             }
+        }
+
+        static List<Dictionary<string, string>> getPDFs(string root_path)
+        {
+            var pdf_paths = new List<Dictionary<string, string>>();
+            var src_dir = new DirectoryInfo(SRC);
+            var q = new Queue<DirectoryInfo>();
+            q.Enqueue(src_dir);
+            while (q.Count > 0)
+            {
+                var cur_dir = q.Dequeue();
+                foreach (var child in cur_dir.GetDirectories())
+                {
+                    if (child.Name != "_svn")
+                    {
+                        q.Enqueue(child);
+                    }
+                }
+
+                foreach (var file in cur_dir.GetFiles())
+                {
+                    if (file.Extension.ToLower() == ".pdf")
+                    {
+                        var dict = new Dictionary<string, string>();                        
+                        dict.Add("og", file.FullName);
+                        dict.Add("bak", file.FullName + "~");
+                        pdf_paths.Add(dict);
+                        //SRC_PDF_USAGE += file.Length;
+                        //DEST_PDF_USAGE += remove_embedded_fonts(file);
+                        //DEST_PDF_USAGE += optimize_pdf(file);
+                    }
+                }
+            }
+
+            return pdf_paths;
         }
 
         static void Main(string[] args) {
@@ -115,25 +146,32 @@ namespace pdf_reducer {
             var SRC_PDF_USAGE = 0.0;
             var DEST_PDF_USAGE = 0.0;
 
+            var pdf_paths = getPDFs(SRC);
+
+            foreach(var _path in pdf_paths)
+            {
+                SRC_PDF_USAGE += get_file_size(_path["og"]);
+            }
+
+            //create _bak folder
             var src_dir = new DirectoryInfo(SRC);
+            var bak_path = src_dir.FullName + "/pdf_bak";
 
-            var q = new Queue<DirectoryInfo>();
-            q.Enqueue(src_dir);
+            for(var i = 0; i < pdf_paths.Count; ++i)
+            {
+                var filename = pdf_paths[i]["og"];
+                var backup = pdf_paths[i]["bak"];
 
-            while (q.Count > 0) {
-                var cur_dir = q.Dequeue();
-                foreach (var child in cur_dir.GetDirectories()) {
-                    if (child.Name != "_svn") {
-                        q.Enqueue(child);
-                    }
+                File.Copy(filename, backup, true);
+
+                if(optimize_pdf(backup, filename))
+                {
+                    //remove_embedded_fonts(new FileInfo(filename));
+                    DEST_PDF_USAGE += new FileInfo(filename).Length;
                 }
-
-                foreach (var file in cur_dir.GetFiles()) {
-                    if (file.Extension.ToLower() == ".pdf") {
-                        SRC_PDF_USAGE += file.Length;
-                        DEST_PDF_USAGE += remove_embedded_fonts(file);
-                        //DEST_PDF_USAGE += optimize_pdf(file);
-                    }
+                else
+                {
+                    DEST_PDF_USAGE += get_file_size(filename);
                 }
             }
 
